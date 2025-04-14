@@ -1,6 +1,7 @@
 import time
 import os
 import re
+import csv
 from datetime import datetime
 from getpass import getpass
 from selenium import webdriver
@@ -415,17 +416,188 @@ def navigate_to_page(driver, pagination, page_num):
         
         return False
 
-# 새로 추가한 함수: 비밀 댓글 영역 캡처
-def capture_secret_comment_areas(driver, capture_dir, page_num=1):
-    """비밀 댓글 영역만 캡처하는 함수"""
-    print(f"페이지 {page_num}의 비밀 댓글 영역 찾아서 캡처...")
+def extract_email(text):
+    """텍스트에서 이메일 주소 추출"""
+    if not text:
+        return None
     
-    # 비밀 댓글 영역 저장 폴더
-    secret_dir = f"{capture_dir}/secret_comments"
-    os.makedirs(secret_dir, exist_ok=True)
+    # 이메일 정규식 패턴
+    email_pattern = r'[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}'
+    match = re.search(email_pattern, text)
+    
+    if match:
+        return match.group(0)
+    
+    return None
+
+def get_username_from_email(email):
+    """이메일에서 @ 앞 부분 추출"""
+    if not email:
+        return None
+    
+    parts = email.split('@')
+    if len(parts) >= 1:
+        return parts[0]
+    
+    return None
+
+def capture_comment_with_email(driver, capture_dir, page_num=1):
+    """이메일이 포함된 댓글 영역 캡처 함수"""
+    print(f"페이지 {page_num}의 댓글 영역에서 이메일 탐색 중...")
+    
+    # 댓글 영역 저장 폴더
+    os.makedirs(capture_dir, exist_ok=True)
+    
+    # CSV 파일 준비
+    csv_file = f"{capture_dir}/email_comments.csv"
+    csv_exists = os.path.exists(csv_file)
+    
+    csv_fields = ["이메일 ID", "이메일 주소", "스크린샷 파일명"]
+    
+    with open(csv_file, 'a', newline='', encoding='utf-8') as f:
+        csv_writer = csv.writer(f)
+        if not csv_exists:
+            csv_writer.writerow(csv_fields)
+    
+    # 댓글 요소들 찾기
+    try:
+        # 일반 댓글 선택자
+        comment_selectors = [
+            ".u_cbox_comment",           # 네이버 뉴스/블로그 댓글
+            ".comment_item",             # 네이버 블로그 댓글
+            ".item_comment",             # 아이템 댓글
+            ".comment",                  # 댓글
+            "li",                        # 목록 아이템 (댓글 목록에서)
+        ]
+        
+        all_comments = []
+        
+        # 각 선택자로 시도
+        for selector in comment_selectors:
+            try:
+                comments = driver.find_elements(By.CSS_SELECTOR, selector)
+                if comments and len(comments) > 0:
+                    all_comments = comments
+                    print(f"{len(comments)}개 댓글 발견 (선택자: {selector})")
+                    break
+            except:
+                continue
+        
+        if not all_comments:
+            print(f"페이지 {page_num}에서 댓글을 찾을 수 없습니다.")
+            return 0
+        
+        # 이메일이 포함된 댓글 수
+        email_comment_count = 0
+        email_data = []
+        
+        # 각 댓글 확인
+        for i, comment in enumerate(all_comments):
+            try:
+                # 스크롤하여 댓글이 보이게 조정
+                driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", comment)
+                time.sleep(0.5)
+                
+                # 댓글 내용 추출
+                try:
+                    # 댓글 내용 요소 찾기 - 여러 선택자 시도
+                    content_selectors = [
+                        ".u_cbox_contents",          # 네이버 댓글 내용
+                        ".u_cbox_text",              # 다른 형식의 네이버 댓글
+                        ".comment_text",             # 일반 댓글 텍스트
+                        ".text_comment",             # 텍스트 댓글
+                        "p",                         # 단락 요소
+                        ".comment_area"              # 댓글 영역
+                    ]
+                    
+                    comment_text = None
+                    for cs in content_selectors:
+                        try:
+                            content_elem = comment.find_element(By.CSS_SELECTOR, cs)
+                            comment_text = content_elem.text
+                            if comment_text.strip():
+                                break
+                        except:
+                            continue
+                    
+                    # 내용을 찾지 못했다면 전체 텍스트 사용
+                    if not comment_text:
+                        comment_text = comment.text
+                    
+                    # 이메일 주소 탐색
+                    email = extract_email(comment_text)
+                    
+                    if email:
+                        print(f"이메일 발견: {email} (댓글 {i+1})")
+                        
+                        # 이메일 사용자명 추출
+                        username = get_username_from_email(email)
+                        
+                        # 댓글 영역 찾기 (정확한 캡처를 위해)
+                        comment_area = None
+                        try:
+                            comment_area = comment.find_element(By.CSS_SELECTOR, "div.u_cbox_area")
+                        except:
+                            comment_area = comment  # 영역이 없으면 전체 댓글 요소 사용
+                        
+                        # 시각화를 위한 테두리 설정
+                        driver.execute_script("""
+                            arguments[0].style.border = '2px solid green';
+                        """, comment_area)
+                        
+                        # 파일명에 이메일 사용
+                        safe_email = email.replace('@', '_').replace('.', '_')
+                        filename = f"{safe_email}.png"
+                        filepath = f"{capture_dir}/{filename}"
+                        
+                        # 스크린샷 저장
+                        comment_area.screenshot(filepath)
+                        print(f"이메일이 포함된 댓글 캡처: {filepath}")
+                        
+                        # CSV 데이터 준비
+                        email_data.append([username, email, filename])
+                        email_comment_count += 1
+                        
+                except Exception as e:
+                    print(f"댓글 {i+1}의 내용 추출 중 오류: {e}")
+            
+            except Exception as e:
+                print(f"댓글 {i+1} 처리 중 오류: {e}")
+        
+        # CSV 파일에 데이터 추가
+        if email_data:
+            with open(csv_file, 'a', newline='', encoding='utf-8') as f:
+                csv_writer = csv.writer(f)
+                csv_writer.writerows(email_data)
+            
+            print(f"페이지 {page_num}에서 {email_comment_count}개의 이메일이 포함된 댓글을 캡처했습니다.")
+        
+        return email_comment_count
+        
+    except Exception as e:
+        print(f"이메일 포함 댓글 캡처 중 오류 발생: {e}")
+        return 0
+
+def capture_secret_comment_with_email(driver, capture_dir, page_num=1):
+    """비밀 댓글 중 이메일이 포함된 댓글 영역만 캡처하는 함수"""
+    print(f"페이지 {page_num}의 비밀 댓글 영역에서 이메일 탐색 중...")
+    
+    # 캡처 저장 폴더
+    os.makedirs(capture_dir, exist_ok=True)
+    
+    # CSV 파일 준비
+    csv_file = f"{capture_dir}/email_comments.csv"
+    csv_exists = os.path.exists(csv_file)
+    
+    csv_fields = ["이메일 ID", "이메일 주소", "스크린샷 파일명"]
+    
+    with open(csv_file, 'a', newline='', encoding='utf-8') as f:
+        csv_writer = csv.writer(f)
+        if not csv_exists:
+            csv_writer.writerow(csv_fields)
     
     try:
-        # 비밀 댓글 요소 선택자 (제공된 HTML 분석 기반)
+        # 비밀 댓글 요소 선택자
         secret_comments = driver.find_elements(
             By.CSS_SELECTOR, 
             "div.u_cbox_comment_box.u_cbox_type_profile.u_cbox_type_secret"
@@ -444,58 +616,115 @@ def capture_secret_comment_areas(driver, capture_dir, page_num=1):
             
         print(f"페이지 {page_num}에서 {len(secret_comments)}개의 비밀 댓글 발견")
         
-        # 각 비밀 댓글 요소 캡처
-        for i, comment in enumerate(secret_comments):
-            # 스크롤하여 댓글이 보이게 조정
-            driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", comment)
-            time.sleep(0.5)  # 스크롤 후 대기
-            
-            # 댓글 영역 찾기 (u_cbox_area - 우리가 캡처하려는 정확한 부분)
-            try:
-                comment_area = comment.find_element(By.CSS_SELECTOR, "div.u_cbox_area")
-                
-                # 시각화를 위한 테두리 설정
-                driver.execute_script("""
-                    arguments[0].style.border = '2px solid red';
-                """, comment_area)
-                
-                # 스크린샷 저장
-                filename = f"{secret_dir}/page_{page_num}_secret_{i+1}.png"
-                comment_area.screenshot(filename)
-                print(f"비밀 댓글 영역 {i+1} 캡처: {filename}")
-                
-                # 날짜 정보 저장
-                try:
-                    date_info = comment_area.find_element(By.CSS_SELECTOR, "span.u_cbox_date").text
-                    with open(f"{secret_dir}/secret_comments_info.txt", "a", encoding="utf-8") as f:
-                        f.write(f"페이지 {page_num} - 비밀 댓글 {i+1}: {date_info}\n")
-                except:
-                    pass
-            except Exception as e:
-                print(f"비밀 댓글 {i+1}의 영역 캡처 실패: {e}")
-                
-                # 전체 요소 캡처 시도
-                try:
-                    filename = f"{secret_dir}/page_{page_num}_secret_full_{i+1}.png"
-                    comment.screenshot(filename)
-                    print(f"전체 비밀 댓글 요소 {i+1} 캡처: {filename}")
-                except:
-                    print(f"전체 비밀 댓글 요소 {i+1} 캡처도 실패")
+        # 이메일이 포함된 비밀 댓글 수
+        email_comment_count = 0
+        email_data = []
         
-        return len(secret_comments)
+        # 각 비밀 댓글 요소 확인
+        for i, comment in enumerate(secret_comments):
+            try:
+                # 스크롤하여 댓글이 보이게 조정
+                driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", comment)
+                time.sleep(0.5)
+                
+                # 댓글 내용 추출
+                try:
+                    # 비밀 댓글 내용 텍스트 확인 시도
+                    content_selectors = [
+                        ".u_cbox_secret_contents",   # 비밀 댓글 내용
+                        ".u_cbox_contents",          # 일반 댓글 내용
+                        ".u_cbox_text"               # 댓글 텍스트
+                    ]
+                    
+                    comment_text = None
+                    for cs in content_selectors:
+                        try:
+                            content_elem = comment.find_element(By.CSS_SELECTOR, cs)
+                            comment_text = content_elem.text
+                            if comment_text.strip():
+                                break
+                        except:
+                            continue
+                    
+                    # 내용을 찾지 못했다면 전체 텍스트 사용
+                    if not comment_text:
+                        comment_text = comment.text
+                    
+                    # 이메일 주소 탐색
+                    email = extract_email(comment_text)
+                    
+                    if email:
+                        print(f"이메일 발견: {email} (비밀 댓글 {i+1})")
+                        
+                        # 이메일 사용자명 추출
+                        username = get_username_from_email(email)
+                        
+                        # 댓글 영역 찾기 (u_cbox_area - 우리가 캡처하려는 정확한 부분)
+                        try:
+                            comment_area = comment.find_element(By.CSS_SELECTOR, "div.u_cbox_area")
+                            
+                            # 시각화를 위한 테두리 설정
+                            driver.execute_script("""
+                                arguments[0].style.border = '2px solid red';
+                            """, comment_area)
+                            
+                            # 파일명에 이메일 사용
+                            safe_email = email.replace('@', '_').replace('.', '_')
+                            filename = f"{safe_email}.png"
+                            filepath = f"{capture_dir}/{filename}"
+                            
+                            # 스크린샷 저장
+                            comment_area.screenshot(filepath)
+                            print(f"이메일이 포함된 비밀 댓글 캡처: {filepath}")
+                            
+                            # CSV 데이터 준비
+                            email_data.append([username, email, filename])
+                            email_comment_count += 1
+                            
+                        except Exception as e:
+                            print(f"비밀 댓글 {i+1}의 영역 캡처 실패: {e}")
+                            
+                            # 전체 요소 캡처 시도
+                            try:
+                                safe_email = email.replace('@', '_').replace('.', '_')
+                                filename = f"{safe_email}_full.png"
+                                filepath = f"{capture_dir}/{filename}"
+                                
+                                comment.screenshot(filepath)
+                                print(f"이메일이 포함된 전체 비밀 댓글 요소 캡처: {filepath}")
+                                
+                                # CSV 데이터 준비
+                                email_data.append([username, email, filename])
+                                email_comment_count += 1
+                            except:
+                                print(f"이메일이 포함된 전체 비밀 댓글 요소 캡처도 실패")
+                except Exception as e:
+                    print(f"비밀 댓글 {i+1}의 내용 확인 중 오류: {e}")
+            except Exception as e:
+                print(f"비밀 댓글 {i+1} 처리 중 오류: {e}")
+        
+        # CSV 파일에 데이터 추가
+        if email_data:
+            with open(csv_file, 'a', newline='', encoding='utf-8') as f:
+                csv_writer = csv.writer(f)
+                csv_writer.writerows(email_data)
+            
+            print(f"페이지 {page_num}에서 {email_comment_count}개의 이메일이 포함된 비밀 댓글을 캡처했습니다.")
+        
+        return email_comment_count
     except Exception as e:
-        print(f"비밀 댓글 영역 캡처 중 오류 발생: {e}")
+        print(f"이메일 포함 비밀 댓글 캡처 중 오류 발생: {e}")
         return 0
 
-def navigate_and_capture_secret_comments(driver, blog_url):
-    """모든 페이지의 비밀 댓글 영역만 캡처"""
+def navigate_and_capture_email_comments(driver, blog_url):
+    """모든 페이지의 이메일이 포함된 댓글 영역만 캡처"""
     print(f"블로그 페이지 접속: {blog_url}")
     driver.get(blog_url)
     time.sleep(3)
     
     # 화면 캡처 저장 폴더
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    capture_dir = f"secret_comments_{timestamp}"
+    capture_dir = f"email_comments_{timestamp}"
     os.makedirs(capture_dir, exist_ok=True)
     
     # 블로그 프레임 전환
@@ -513,23 +742,24 @@ def navigate_and_capture_secret_comments(driver, blog_url):
         print("댓글 로딩 중...")
         time.sleep(3)
     
-    # 첫 페이지 비밀 댓글 캡처
-    secret_count = capture_secret_comment_areas(driver, capture_dir, 1)
-    total_secret_count = secret_count
+    # 첫 페이지 이메일 포함 댓글 캡처
+    normal_count = capture_comment_with_email(driver, capture_dir, 1)
+    secret_count = capture_secret_comment_with_email(driver, capture_dir, 1)
+    total_email_count = normal_count + secret_count
     
     # 페이지네이션 요소 찾기
     pagination = find_pagination_element(driver)
     
     if not pagination:
         print("페이지네이션 요소를 찾지 못했습니다. 첫 페이지만 캡처했습니다.")
-        return total_secret_count
+        return total_email_count
     
     # 총 페이지 수 가져오기
     total_pages = get_total_pages(driver, pagination)
     
     if total_pages <= 1:
         print("추가 페이지가 없습니다. 첫 페이지만 캡처했습니다.")
-        return total_secret_count
+        return total_email_count
     
     # 2페이지부터 마지막 페이지까지 처리
     for page_num in range(2, total_pages + 1):
@@ -559,20 +789,22 @@ def navigate_and_capture_secret_comments(driver, blog_url):
                 print(f"다음 버튼 클릭 실패: {e}")
                 continue
         
-        # 현재 페이지의 비밀 댓글 캡처
-        page_secret_count = capture_secret_comment_areas(driver, capture_dir, page_num)
-        total_secret_count += page_secret_count
+        # 현재 페이지의 이메일 포함 댓글 캡처
+        page_normal_count = capture_comment_with_email(driver, capture_dir, page_num)
+        page_secret_count = capture_secret_comment_with_email(driver, capture_dir, page_num)
+        total_email_count += (page_normal_count + page_secret_count)
         
         # 페이지네이션 다시 찾기 (다음 반복을 위해)
         pagination = find_pagination_element(driver)
     
-    print(f"\n모든 페이지 처리 완료! 총 {total_secret_count}개의 비밀 댓글 영역을 캡처했습니다.")
+    print(f"\n모든 페이지 처리 완료! 총 {total_email_count}개의 이메일이 포함된 댓글 영역을 캡처했습니다.")
     print(f"결과는 '{capture_dir}' 폴더에 저장되었습니다.")
-    return total_secret_count
+    print(f"CSV 파일: '{capture_dir}/email_comments.csv'")
+    return total_email_count
 
 def main():
-    print("===== 네이버 블로그 비밀 댓글 영역 캡처 =====")
-    print("이 스크립트는 네이버 블로그의 모든 페이지에서 비밀 댓글 영역을 찾아 캡처합니다.")
+    print("===== 네이버 블로그 이메일 포함 댓글 캡처 =====")
+    print("이 스크립트는 네이버 블로그의 모든 페이지에서 이메일이 포함된 댓글 영역을 찾아 캡처합니다.")
     print()
     
     # 네이버 로그인 정보 입력
@@ -601,9 +833,9 @@ def main():
         login_success = login_to_naver(driver, username, password)
         
         if login_success:
-            # 블로그 페이지로 이동하여 비밀 댓글만 캡처
-            captured_count = navigate_and_capture_secret_comments(driver, blog_url)
-            print(f"총 {captured_count}개의 비밀 댓글 영역을 캡처했습니다.")
+            # 블로그 페이지로 이동하여 이메일 포함 댓글만 캡처
+            captured_count = navigate_and_capture_email_comments(driver, blog_url)
+            print(f"총 {captured_count}개의 이메일이 포함된 댓글 영역을 캡처했습니다.")
         else:
             print("로그인 실패로 인해 진행할 수 없습니다.")
             print("참고: 네이버는 자동 로그인을 차단할 수 있습니다.")
