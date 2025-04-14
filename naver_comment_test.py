@@ -540,17 +540,12 @@ def capture_comment_with_email(driver, capture_dir, page_num=1):
                         except:
                             comment_area = comment  # 영역이 없으면 전체 댓글 요소 사용
                         
-                        # 시각화를 위한 테두리 설정
-                        driver.execute_script("""
-                            arguments[0].style.border = '2px solid green';
-                        """, comment_area)
-                        
                         # 파일명에 이메일 사용
                         safe_email = email.replace('@', '_').replace('.', '_')
                         filename = f"{safe_email}.png"
                         filepath = f"{capture_dir}/{filename}"
                         
-                        # 스크린샷 저장
+                        # 스크린샷 저장 (테두리 없이)
                         comment_area.screenshot(filepath)
                         print(f"이메일이 포함된 댓글 캡처: {filepath}")
                         
@@ -663,17 +658,12 @@ def capture_secret_comment_with_email(driver, capture_dir, page_num=1):
                         try:
                             comment_area = comment.find_element(By.CSS_SELECTOR, "div.u_cbox_area")
                             
-                            # 시각화를 위한 테두리 설정
-                            driver.execute_script("""
-                                arguments[0].style.border = '2px solid red';
-                            """, comment_area)
-                            
                             # 파일명에 이메일 사용
                             safe_email = email.replace('@', '_').replace('.', '_')
                             filename = f"{safe_email}.png"
                             filepath = f"{capture_dir}/{filename}"
                             
-                            # 스크린샷 저장
+                            # 스크린샷 저장 (테두리 없이)
                             comment_area.screenshot(filepath)
                             print(f"이메일이 포함된 비밀 댓글 캡처: {filepath}")
                             
