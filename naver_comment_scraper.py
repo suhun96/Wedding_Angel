@@ -1,6 +1,7 @@
 import os
 import re
 import time
+import sys
 from datetime import datetime
 from getpass import getpass
 from selenium import webdriver
@@ -71,8 +72,8 @@ def extract_blog_id_and_post_id(url):
     
     return None, None
 
-def get_comments(driver, blog_url):
-    """블로그 댓글 수집 및 이메일 포함 댓글 캡처"""
+def get_all_comments(driver, blog_url):
+    """블로그의 모든 댓글 수집 및 캡처"""
     print(f"블로그 게시물 접속 중: {blog_url}")
     driver.get(blog_url)
     
@@ -118,6 +119,76 @@ def get_comments(driver, blog_url):
     screenshot_dir = f"screenshots_{timestamp}"
     os.makedirs(screenshot_dir, exist_ok=True)
     
+    # 모든 댓글 캡처
+    for i, comment in enumerate(comments):
+        try:
+            # 댓글 작성자 정보
+            try:
+                author = comment.find_element(By.CSS_SELECTOR, ".nick").text
+            except:
+                author = f"사용자_{i+1}"
+            
+            # 스크롤하여 댓글이 보이게 조정
+            driver.execute_script("arguments[0].scrollIntoView(true);", comment)
+            time.sleep(0.5)
+            
+            # 댓글 요소 캡처
+            filename = f"{screenshot_dir}/댓글_{i+1}_{author}.png"
+            comment.screenshot(filename)
+            print(f"캡처 저장 ({i+1}/{len(comments)}): {filename}")
+        except Exception as e:
+            print(f"댓글 처리 중 오류 발생: {e}")
+    
+    print(f"모든 댓글 {len(comments)}개를 캡처했습니다.")
+    print(f"스크린샷은 '{screenshot_dir}' 폴더에 저장되었습니다.")
+
+def get_email_comments(driver, blog_url):
+    """블로그 댓글 수집 및 이메일 포함 댓글 캡처"""
+    print(f"블로그 게시물 접속 중: {blog_url}")
+    driver.get(blog_url)
+    
+    # 블로그 ID와 포스트 ID 추출
+    blog_id, post_id = extract_blog_id_and_post_id(blog_url)
+    if not blog_id or not post_id:
+        print("유효한 블로그 URL이 아닙니다.")
+        return
+    
+    # 블로그 프레임으로 전환 (네이버 블로그는 iframe 구조)
+    try:
+        WebDriverWait(driver, 10).until(
+            EC.frame_to_be_available_and_switch_to_it((By.ID, "mainFrame"))
+        )
+    except TimeoutException:
+        print("블로그 프레임을 찾을 수 없습니다.")
+        return
+    
+    # 댓글 영역 로딩 대기
+    try:
+        WebDriverWait(driver, 10).until(
+            EC.presence_of_element_located((By.CSS_SELECTOR, ".area_comment"))
+        )
+    except TimeoutException:
+        print("댓글 영역을 찾을 수 없습니다.")
+        return
+    
+    # 더보기 버튼이 있으면 모든 댓글 로드
+    try:
+        while True:
+            more_button = driver.find_element(By.CSS_SELECTOR, ".btn_comment_more")
+            more_button.click()
+            time.sleep(1)
+    except NoSuchElementException:
+        print("모든 댓글을 로드했습니다.")
+    
+    # 댓글 수집
+    comments = driver.find_elements(By.CSS_SELECTOR, ".area_comment .item_comment")
+    print(f"총 {len(comments)}개의 댓글을 찾았습니다.")
+    
+    # 스크린샷 저장 폴더 생성
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    screenshot_dir = f"screenshots_email_{timestamp}"
+    os.makedirs(screenshot_dir, exist_ok=True)
+    
     # 이메일이 포함된 댓글 캡처
     email_comments_count = 0
     for i, comment in enumerate(comments):
@@ -147,7 +218,16 @@ def get_comments(driver, blog_url):
 def main():
     """메인 함수"""
     print("===== 네이버 블로그 댓글 수집기 =====")
-    print("이메일이 포함된 댓글을 찾아 스크린샷으로 저장합니다.")
+    
+    # 모드 선택 (명령줄 인수로 전달됨)
+    mode = 1  # 기본값: 이메일 포함 댓글만 캡처
+    if len(sys.argv) > 1 and sys.argv[1] == "2":
+        mode = 2  # 모든 댓글 캡처
+    
+    if mode == 1:
+        print("모드: 이메일이 포함된 댓글만 캡처합니다.")
+    else:
+        print("모드: 모든 댓글을 캡처합니다.")
     print()
     
     # 네이버 계정 정보 입력
@@ -161,8 +241,11 @@ def main():
     try:
         # 네이버 로그인
         if login_to_naver(driver, username, password):
-            # 댓글 수집 및 스크린샷
-            get_comments(driver, blog_url)
+            # 선택한 모드에 따라 댓글 수집 및 스크린샷
+            if mode == 1:
+                get_email_comments(driver, blog_url)
+            else:
+                get_all_comments(driver, blog_url)
     finally:
         # 종료
         print("\n프로그램을 종료합니다.")
