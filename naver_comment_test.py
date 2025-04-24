@@ -271,86 +271,148 @@ def get_total_pages(driver, pagination):
         return 1
     
     try:
-        # 페이지 번호 정보 찾기 - _lastPageNo 클래스 사용
+        # _lastPageNo 클래스로 총 페이지 수 가져오기 (제공된 CSS에서 확인됨)
         last_page_element = pagination.find_element(By.CSS_SELECTOR, "._lastPageNo")
         total_pages = int(last_page_element.text.strip())
         print(f"총 페이지 수: {total_pages}")
         return total_pages
     except Exception as e:
-        print(f"총 페이지 수 확인 실패: {e}")
+        print(f"_lastPageNo 클래스로 총 페이지 확인 실패: {e}")
+        
+        # 다른 방법으로 시도
+        try:
+            # div.num 내 span 요소 찾기
+            spans = pagination.find_elements(By.CSS_SELECTOR, "div.num > span")
+            for span in spans:
+                # 숫자가 포함된 span 찾기
+                if span.text.strip().isdigit():
+                    total_pages = int(span.text.strip())
+                    print(f"div.num > span에서 총 페이지 수 추출: {total_pages}")
+                    return total_pages
+        except Exception as e2:
+            print(f"div.num > span에서 총 페이지 수 추출 실패: {e2}")
+        
+        # 모든 방법 실패 시 기본값 1 반환
         return 1
 
-def navigate_to_page(driver, pagination, page_num):
-    """특정 페이지로 이동 - 이전 버튼만 사용"""
+def navigate_to_page(driver, pagination, page_num, current_page=None):
+    """특정 페이지로 이동 - 제공된 CSS 구조 기반으로 수정"""
     if not pagination:
         return False
     
-    print(f"페이지 {page_num}로 이동 시도 (이전 버튼 사용)...")
+    print(f"페이지 {page_num}로 이동 시도...")
     
     try:
-        # 현재 페이지 확인
+        # 현재 페이지 정보 확인 (CSS 구조에서 확인된 ._currentPageNo 사용)
         current_page_element = pagination.find_element(By.CSS_SELECTOR, "._currentPageNo")
         current_page = int(current_page_element.text.strip())
         
-        print(f"현재 페이지: {current_page}, 목표 페이지: {page_num}")
+        # 총 페이지 수 확인
+        last_page_element = pagination.find_element(By.CSS_SELECTOR, "._lastPageNo")
+        total_pages = int(last_page_element.text.strip())
         
+        print(f"현재 페이지 정보: {current_page}/{total_pages}")
+        
+        # 현재 페이지가 이미 원하는 페이지인 경우
         if current_page == page_num:
             print(f"이미 페이지 {page_num}에 있습니다.")
             return True
         
-        # 이전 버튼 찾기
-        prev_button = pagination.find_element(By.CSS_SELECTOR, "a.prev")
-        
-        # 항상 이전 버튼 사용
-        if "dimmed" not in prev_button.get_attribute("class"):
-            print(f"이전 버튼으로 이동 (현재: {current_page})")
-            
-            # 버튼이 보이게 스크롤
-            driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", prev_button)
-            time.sleep(1.5)  # 스크롤 후 대기 시간
-            
-            # 직접 클릭 시도
+        # 페이지 이동 방향 결정
+        if page_num < current_page:
+            # 이전 페이지로 이동
             try:
-                prev_button.click()
-                print("이전 버튼 클릭 성공!")
-            except Exception as click_error:
-                print(f"직접 클릭 실패: {click_error}")
-                # JavaScript로 클릭 시도
-                try:
-                    driver.execute_script("arguments[0].click();", prev_button)
-                    print("JavaScript 이전 버튼 클릭 성공!")
-                except Exception as js_error:
-                    print(f"JavaScript 클릭 실패: {js_error}")
-                    return False
-            
-            # 페이지 전환 대기
-            time.sleep(3)
-            
-            # 페이지네이션 요소 다시 찾기
-            updated_pagination = find_pagination_element(driver)
-            if not updated_pagination:
-                print("페이지네이션 요소를 다시 찾을 수 없습니다.")
-                return False
-            
-            # 현재 페이지 확인
-            try:
-                new_current_element = updated_pagination.find_element(By.CSS_SELECTOR, "._currentPageNo")
-                new_current_page = int(new_current_element.text.strip())
-                print(f"이동 후 현재 페이지: {new_current_page}")
+                # CSS에서 확인된 정확한 선택자 사용
+                prev_button = pagination.find_element(By.CSS_SELECTOR, "a.prev")
                 
-                if new_current_page == page_num:
-                    print(f"목표 페이지 {page_num}에 도달했습니다.")
-                    return True
-                else:
-                    # 계속 이전 버튼 클릭
-                    return navigate_to_page(driver, updated_pagination, page_num)
+                # 버튼 비활성화 여부 확인
+                if "dimmed" in prev_button.get_attribute("class"):
+                    print("이전 버튼이 비활성화되어 있습니다.")
+                    return False
+                
+                # 버튼 클릭
+                driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", prev_button)
+                time.sleep(1.5)
+                
+                try:
+                    prev_button.click()
+                except:
+                    driver.execute_script("arguments[0].click();", prev_button)
+                
+                print("이전 버튼 클릭!")
+                time.sleep(3)
+                
+                # 페이지 전환 확인
+                updated_pagination = find_pagination_element(driver)
+                if not updated_pagination:
+                    print("페이지네이션 요소를 다시 찾을 수 없습니다.")
+                    return False
+                
+                # 현재 페이지 다시 확인
+                try:
+                    new_current_element = updated_pagination.find_element(By.CSS_SELECTOR, "._currentPageNo")
+                    new_current_page = int(new_current_element.text.strip())
+                    print(f"이동 후 현재 페이지: {new_current_page}")
+                    
+                    if new_current_page == page_num:
+                        print(f"목표 페이지 {page_num}에 도달했습니다.")
+                        return True
+                    else:
+                        # 계속 이동 시도 (재귀 호출)
+                        return navigate_to_page(driver, updated_pagination, page_num)
+                except Exception as e:
+                    print(f"이동 후 페이지 확인 실패: {e}")
+                    return False
             except Exception as e:
-                print(f"이동 후 페이지 확인 실패: {e}")
+                print(f"이전 버튼 클릭 실패: {e}")
                 return False
         else:
-            print("이전 버튼이 비활성화 되어 있습니다.")
-            return False
-        
+            # 다음 페이지로 이동
+            try:
+                # CSS에서 확인된 정확한 선택자 사용
+                next_button = pagination.find_element(By.CSS_SELECTOR, "a.next")
+                
+                # 버튼 비활성화 여부 확인
+                if "dimmed" in next_button.get_attribute("class"):
+                    print("다음 버튼이 비활성화되어 있습니다.")
+                    return False
+                
+                # 버튼 클릭
+                driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", next_button)
+                time.sleep(1.5)
+                
+                try:
+                    next_button.click()
+                except:
+                    driver.execute_script("arguments[0].click();", next_button)
+                
+                print("다음 버튼 클릭!")
+                time.sleep(3)
+                
+                # 페이지 전환 확인
+                updated_pagination = find_pagination_element(driver)
+                if not updated_pagination:
+                    print("페이지네이션 요소를 다시 찾을 수 없습니다.")
+                    return False
+                
+                # 현재 페이지 다시 확인
+                try:
+                    new_current_element = updated_pagination.find_element(By.CSS_SELECTOR, "._currentPageNo")
+                    new_current_page = int(new_current_element.text.strip())
+                    print(f"이동 후 현재 페이지: {new_current_page}")
+                    
+                    if new_current_page == page_num:
+                        print(f"목표 페이지 {page_num}에 도달했습니다.")
+                        return True
+                    else:
+                        # 계속 이동 시도 (재귀 호출)
+                        return navigate_to_page(driver, updated_pagination, page_num)
+                except Exception as e:
+                    print(f"이동 후 페이지 확인 실패: {e}")
+                    return False
+            except Exception as e:
+                print(f"다음 버튼 클릭 실패: {e}")
+                return False
     except Exception as e:
         print(f"페이지 {page_num}로 이동 실패: {e}")
         return False
@@ -646,7 +708,7 @@ def capture_secret_comment_with_email(driver, capture_dir, page_num=1):
         return 0
 
 def navigate_and_capture_email_comments(driver, blog_url):
-    """모든 페이지의 이메일이 포함된 댓글 영역만 캡처"""
+    """모든 페이지의 이메일이 포함된 댓글 영역만 캡처 - 제공된 CSS 구조 기반으로 수정"""
     print(f"블로그 페이지 접속: {blog_url}")
     driver.get(blog_url)
     time.sleep(3)
@@ -671,62 +733,122 @@ def navigate_and_capture_email_comments(driver, blog_url):
         print("댓글 로딩 중...")
         time.sleep(3)
     
-    # 첫 페이지 이메일 포함 댓글 캡처
-    normal_count = capture_comment_with_email(driver, capture_dir, 1)
-    secret_count = capture_secret_comment_with_email(driver, capture_dir, 1)
-    total_email_count = normal_count + secret_count
+    # 이전/다음 페이지 이동을 위한 변수 초기화
+    total_email_count = 0
+    processed_pages = set()  # 이미 처리한 페이지 추적
+    
+    # 첫 번째 페이지 처리 (항상 존재)
+    print("\n=== 댓글 페이지 처리 시작 ===")
     
     # 페이지네이션 요소 찾기
     pagination = find_pagination_element(driver)
     
     if not pagination:
-        print("페이지네이션 요소를 찾지 못했습니다. 첫 페이지만 캡처했습니다.")
+        print("페이지네이션 요소를 찾을 수 없습니다. 단일 페이지만 처리합니다.")
+        # 첫 페이지 이메일 포함 댓글 캡처
+        normal_count = capture_comment_with_email(driver, capture_dir, 1)
+        secret_count = capture_secret_comment_with_email(driver, capture_dir, 1)
+        total_email_count = normal_count + secret_count
         return total_email_count
     
     # 총 페이지 수 가져오기
     total_pages = get_total_pages(driver, pagination)
     
-    if total_pages <= 1:
-        print("추가 페이지가 없습니다. 첫 페이지만 캡처했습니다.")
-        return total_email_count
-    
-    # 2페이지부터 마지막 페이지까지 처리
-    for page_num in range(2, total_pages + 1):
-        print(f"\n=== 페이지 {page_num}/{total_pages} 처리 중... ===")
+    # 페이지 처리 루프
+    while True:
+        # 현재 페이지 번호 확인
+        try:
+            current_element = pagination.find_element(By.CSS_SELECTOR, "._currentPageNo")
+            current_page = int(current_element.text.strip())
+            print(f"\n=== 현재 페이지 {current_page}/{total_pages} 처리 중... ===")
+        except Exception as e:
+            print(f"현재 페이지 번호 확인 실패: {e}")
+            current_page = len(processed_pages) + 1
+            print(f"\n=== 추정 페이지 {current_page} 처리 중... ===")
         
-        # 페이지 이동
-        page_moved = navigate_to_page(driver, pagination, page_num)
+        # 이미 처리한 페이지인지 확인
+        if current_page in processed_pages:
+            print(f"페이지 {current_page}는 이미 처리했습니다. 종료합니다.")
+            break
         
-        if not page_moved:
-            print(f"페이지 {page_num}로 이동하지 못했습니다.")
-            
-            # 페이지네이션 요소 다시 찾기
-            pagination = find_pagination_element(driver)
-            if not pagination:
-                print("페이지네이션 요소를 다시 찾지 못했습니다.")
-                break
-            
-            # 이전/다음 버튼으로 이동 시도
+        # 현재 페이지 이메일 포함 댓글 캡처
+        normal_count = capture_comment_with_email(driver, capture_dir, current_page)
+        secret_count = capture_secret_comment_with_email(driver, capture_dir, current_page)
+        total_email_count += (normal_count + secret_count)
+        
+        # 처리한 페이지 기록
+        processed_pages.add(current_page)
+        
+        # 모든 페이지 처리 완료 확인
+        if len(processed_pages) >= total_pages:
+            print(f"모든 페이지({total_pages}개)를 처리했습니다.")
+            break
+        
+        # 페이지네이션 요소 다시 찾기 (댓글 영역 변화 가능성)
+        pagination = find_pagination_element(driver)
+        if not pagination:
+            print("페이지네이션 요소를 다시 찾을 수 없습니다. 종료합니다.")
+            break
+        
+        # 다음 또는 이전 페이지로 이동
+        # 현재 2/2 페이지인 경우 이전 버튼으로 1페이지 이동
+        if current_page == total_pages and 1 not in processed_pages:
             try:
-                next_button = pagination.find_element(By.CSS_SELECTOR, ".next:not(.dimmed)")
+                prev_button = pagination.find_element(By.CSS_SELECTOR, "a.prev")
+                
+                # 이전 버튼 비활성화 확인
+                if "dimmed" in prev_button.get_attribute("class"):
+                    print("이전 버튼이 비활성화되어 있습니다. 이동 불가.")
+                    break
+                
+                # 이전 버튼 클릭
+                driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", prev_button)
+                time.sleep(1.5)
+                try:
+                    prev_button.click()
+                except:
+                    driver.execute_script("arguments[0].click();", prev_button)
+                print("이전 버튼 클릭!")
+                time.sleep(3)
+                
+                # 페이지네이션 요소 다시 찾기
+                pagination = find_pagination_element(driver)
+            except Exception as e:
+                print(f"이전 버튼 클릭 실패: {e}")
+                break
+        
+        # 현재 1/2 페이지인 경우 다음 버튼으로 2페이지 이동
+        elif current_page == 1 and total_pages > 1 and total_pages not in processed_pages:
+            try:
+                next_button = pagination.find_element(By.CSS_SELECTOR, "a.next")
+                
+                # 다음 버튼 비활성화 확인
+                if "dimmed" in next_button.get_attribute("class"):
+                    print("다음 버튼이 비활성화되어 있습니다. 이동 불가.")
+                    break
+                
+                # 다음 버튼 클릭
                 driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", next_button)
-                time.sleep(1)
-                next_button.click()
-                print("다음 버튼 클릭")
-                time.sleep(2)
+                time.sleep(1.5)
+                try:
+                    next_button.click()
+                except:
+                    driver.execute_script("arguments[0].click();", next_button)
+                print("다음 버튼 클릭!")
+                time.sleep(3)
+                
+                # 페이지네이션 요소 다시 찾기
+                pagination = find_pagination_element(driver)
             except Exception as e:
                 print(f"다음 버튼 클릭 실패: {e}")
-                continue
+                break
         
-        # 현재 페이지의 이메일 포함 댓글 캡처
-        page_normal_count = capture_comment_with_email(driver, capture_dir, page_num)
-        page_secret_count = capture_secret_comment_with_email(driver, capture_dir, page_num)
-        total_email_count += (page_normal_count + page_secret_count)
-        
-        # 페이지네이션 다시 찾기 (다음 반복을 위해)
-        pagination = find_pagination_element(driver)
+        # 그 외의 경우 (모든 페이지를 처리한 경우)
+        else:
+            print("더 이상 처리할 페이지가 없습니다.")
+            break
     
-    print(f"\n모든 페이지 처리 완료! 총 {total_email_count}개의 이메일이 포함된 댓글 영역을 캡처했습니다.")
+    print(f"\n순회 완료! 총 {total_email_count}개의 이메일이 포함된 댓글 영역을 캡처했습니다.")
     print(f"결과는 '{capture_dir}' 폴더에 저장되었습니다.")
     print(f"CSV 파일: '{capture_dir}/email_comments.csv'")
     return total_email_count
