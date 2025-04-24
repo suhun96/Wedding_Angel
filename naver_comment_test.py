@@ -281,107 +281,75 @@ def get_total_pages(driver, pagination):
         return 1
 
 def navigate_to_page(driver, pagination, page_num):
-    """특정 페이지로 이동"""
+    """특정 페이지로 이동 - 이전 버튼만 사용"""
     if not pagination:
         return False
     
-    print(f"페이지 {page_num}로 이동 시도...")
+    print(f"페이지 {page_num}로 이동 시도 (이전 버튼 사용)...")
     
     try:
-        # 현재 페이지 확인 - _currentPageNo 클래스 사용
+        # 현재 페이지 확인
         current_page_element = pagination.find_element(By.CSS_SELECTOR, "._currentPageNo")
         current_page = int(current_page_element.text.strip())
         
-        # 총 페이지 수 확인
-        last_page_element = pagination.find_element(By.CSS_SELECTOR, "._lastPageNo")
-        last_page = int(last_page_element.text.strip())
-        
-        print(f"현재 페이지: {current_page}, 목표 페이지: {page_num}, 총 페이지: {last_page}")
+        print(f"현재 페이지: {current_page}, 목표 페이지: {page_num}")
         
         if current_page == page_num:
             print(f"이미 페이지 {page_num}에 있습니다.")
             return True
         
-        if page_num > last_page:
-            print(f"목표 페이지({page_num})가 총 페이지({last_page})보다 큽니다.")
-            return False
-        
-        # 이전/다음 버튼 찾기
+        # 이전 버튼 찾기
         prev_button = pagination.find_element(By.CSS_SELECTOR, "a.prev")
-        next_button = pagination.find_element(By.CSS_SELECTOR, "a.next") 
         
-        if current_page < page_num:
-            # 다음 페이지로 이동
-            if "dimmed" not in next_button.get_attribute("class"):
-                print(f"다음 버튼으로 이동 (현재: {current_page} -> 목표: {page_num})")
-                
-                # 버튼이 보이게 스크롤
-                driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", next_button)
-                time.sleep(1.5)  # 스크롤 후 대기 시간 증가
-                
-                # 직접 클릭 시도
+        # 항상 이전 버튼 사용
+        if "dimmed" not in prev_button.get_attribute("class"):
+            print(f"이전 버튼으로 이동 (현재: {current_page})")
+            
+            # 버튼이 보이게 스크롤
+            driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", prev_button)
+            time.sleep(1.5)  # 스크롤 후 대기 시간
+            
+            # 직접 클릭 시도
+            try:
+                prev_button.click()
+                print("이전 버튼 클릭 성공!")
+            except Exception as click_error:
+                print(f"직접 클릭 실패: {click_error}")
+                # JavaScript로 클릭 시도
                 try:
-                    next_button.click()
-                    print("클릭 성공!")
-                except Exception as click_error:
-                    print(f"직접 클릭 실패: {click_error}")
-                    # JavaScript로 클릭 시도
-                    try:
-                        driver.execute_script("arguments[0].click();", next_button)
-                        print("JavaScript 클릭 성공!")
-                    except Exception as js_error:
-                        print(f"JavaScript 클릭 실패: {js_error}")
-                        return False
-                
-                # 페이지 전환 대기 (충분한 시간)
-                time.sleep(3)  # 페이지 로딩을 위한 대기 시간 증가
-                
-                # 페이지네이션 요소 다시 찾기
-                updated_pagination = find_pagination_element(driver)
-                if not updated_pagination:
-                    print("페이지네이션 요소를 다시 찾을 수 없습니다.")
+                    driver.execute_script("arguments[0].click();", prev_button)
+                    print("JavaScript 이전 버튼 클릭 성공!")
+                except Exception as js_error:
+                    print(f"JavaScript 클릭 실패: {js_error}")
                     return False
-                
-                return navigate_to_page(driver, updated_pagination, page_num)
-            else:
-                print("다음 버튼이 비활성화 되어 있습니다.")
+            
+            # 페이지 전환 대기
+            time.sleep(3)
+            
+            # 페이지네이션 요소 다시 찾기
+            updated_pagination = find_pagination_element(driver)
+            if not updated_pagination:
+                print("페이지네이션 요소를 다시 찾을 수 없습니다.")
                 return False
-        elif current_page > page_num:
-            # 이전 페이지로 이동
-            if "dimmed" not in prev_button.get_attribute("class"):
-                print(f"이전 버튼으로 이동 (현재: {current_page} -> 목표: {page_num})")
+            
+            # 현재 페이지 확인
+            try:
+                new_current_element = updated_pagination.find_element(By.CSS_SELECTOR, "._currentPageNo")
+                new_current_page = int(new_current_element.text.strip())
+                print(f"이동 후 현재 페이지: {new_current_page}")
                 
-                # 버튼이 보이게 스크롤
-                driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", prev_button)
-                time.sleep(1.5)  # 스크롤 후 대기 시간 증가
-                
-                # 직접 클릭 시도
-                try:
-                    prev_button.click()
-                    print("클릭 성공!")
-                except Exception as click_error:
-                    print(f"직접 클릭 실패: {click_error}")
-                    # JavaScript로 클릭 시도
-                    try:
-                        driver.execute_script("arguments[0].click();", prev_button)
-                        print("JavaScript 클릭 성공!")
-                    except Exception as js_error:
-                        print(f"JavaScript 클릭 실패: {js_error}")
-                        return False
-                
-                # 페이지 전환 대기 (충분한 시간)
-                time.sleep(3)  # 페이지 로딩을 위한 대기 시간 증가
-                
-                # 페이지네이션 요소 다시 찾기
-                updated_pagination = find_pagination_element(driver)
-                if not updated_pagination:
-                    print("페이지네이션 요소를 다시 찾을 수 없습니다.")
-                    return False
-                
-                return navigate_to_page(driver, updated_pagination, page_num)
-            else:
-                print("이전 버튼이 비활성화 되어 있습니다.")
+                if new_current_page == page_num:
+                    print(f"목표 페이지 {page_num}에 도달했습니다.")
+                    return True
+                else:
+                    # 계속 이전 버튼 클릭
+                    return navigate_to_page(driver, updated_pagination, page_num)
+            except Exception as e:
+                print(f"이동 후 페이지 확인 실패: {e}")
                 return False
+        else:
+            print("이전 버튼이 비활성화 되어 있습니다.")
+            return False
         
     except Exception as e:
         print(f"페이지 {page_num}로 이동 실패: {e}")
