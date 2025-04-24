@@ -271,27 +271,11 @@ def get_total_pages(driver, pagination):
         return 1
     
     try:
-        # JavaScript로 페이지 정보 확인 (네이버 댓글 구조에 맞게 수정)
-        total_pages = driver.execute_script("""
-            var pagination = arguments[0];
-            
-            // 페이지 번호가 있는 링크 확인
-            var pageLinks = pagination.querySelectorAll('a');
-            var maxPage = 1;
-            
-            for (var i = 0; i < pageLinks.length; i++) {
-                var pageText = pageLinks[i].textContent.trim();
-                var pageNum = parseInt(pageText);
-                if (!isNaN(pageNum) && pageNum > maxPage) {
-                    maxPage = pageNum;
-                }
-            }
-            
-            return maxPage || 1;
-        """, pagination)
-        
-        print(f"JavaScript로 확인한 총 페이지 수: {total_pages}")
-        return total_pages or 1
+        # 페이지 번호 정보 찾기 - _lastPageNo 클래스 사용
+        last_page_element = pagination.find_element(By.CSS_SELECTOR, "._lastPageNo")
+        total_pages = int(last_page_element.text.strip())
+        print(f"총 페이지 수: {total_pages}")
+        return total_pages
     except Exception as e:
         print(f"총 페이지 수 확인 실패: {e}")
         return 1
@@ -304,23 +288,25 @@ def navigate_to_page(driver, pagination, page_num):
     print(f"페이지 {page_num}로 이동 시도...")
     
     try:
-        # 네이버 댓글 페이지네이션 특성에 맞게 수정
-        # 현재 페이지는 보통 "on" 클래스를 가지고 있음
-        current_page_elements = pagination.find_elements(By.CSS_SELECTOR, "a.on, a.current, ._currentPageNo")
-        current_page = 1  # 기본값 설정
+        # 현재 페이지 확인 - _currentPageNo 클래스 사용
+        current_page_element = pagination.find_element(By.CSS_SELECTOR, "._currentPageNo")
+        current_page = int(current_page_element.text.strip())
         
-        if current_page_elements:
-            current_page_text = current_page_elements[0].text.strip()
-            if current_page_text:
-                current_page = int(current_page_text)
+        # 총 페이지 수 확인
+        last_page_element = pagination.find_element(By.CSS_SELECTOR, "._lastPageNo")
+        last_page = int(last_page_element.text.strip())
         
-        print(f"현재 페이지: {current_page}, 목표 페이지: {page_num}")
+        print(f"현재 페이지: {current_page}, 목표 페이지: {page_num},, 총 페이지: {last_page}")
         
         if current_page == page_num:
             print(f"이미 페이지 {page_num}에 있습니다.")
             return True
         
-        # 네이버 댓글 페이지네이션에 맞게 이전/다음 버튼 찾기
+        if page_num > last_page:
+            print(f"목표 페이지({page_num})가 총 페이지({last_page})보다 큽니다.")
+            return False
+        
+        # 이전/다음 버튼 찾기 (네이버 댓글 구조에 맞게)
         prev_button = pagination.find_element(By.CSS_SELECTOR, "a.prev, a[class*='Prev']")
         next_button = pagination.find_element(By.CSS_SELECTOR, "a.next, a[class*='Next']")
         
@@ -333,8 +319,34 @@ def navigate_to_page(driver, pagination, page_num):
                 driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", next_button)
                 time.sleep(1)
                 
-                # 버튼 클릭 - JavaScript 사용
-                driver.execute_script("arguments[0].click();", next_button)
+                # JavaScript로 클릭 이벤트 실행
+                driver.execute_script("""
+                    // 네이버 댓글 페이지네이션 처리를 위한 특수 처리
+                    var element = arguments[0];
+                    
+                    // _returnFalse 클래스가 있는 경우 별도 처리
+                    if (element.classList.contains('_returnFalse')) {
+                        // 클래스 속성에서 *param(...) 파라미터 추출
+                        var classAttr = element.getAttribute('class');
+                        var paramMatch = classAttr.match(/\\*param\\(([^)]+)\\)/);
+                        
+                        if (paramMatch && paramMatch[1]) {
+                            // 네이버 댓글 페이지네이션 함수 직접 호출 시도
+                            try {
+                                var paramValue = paramMatch[1];
+                                if (window[paramValue]) {
+                                    window[paramValue]();
+                                    return;
+                                }
+                            } catch (e) {
+                                console.error('네이버 댓글 함수 호출 실패:', e);
+                            }
+                        }
+                    }
+                    
+                    // 기본 클릭
+                    element.click();
+                """, next_button)
                 
                 time.sleep(2)  # 페이지 로딩 대기
                 return navigate_to_page(driver, find_pagination_element(driver), page_num)
@@ -350,57 +362,43 @@ def navigate_to_page(driver, pagination, page_num):
                 driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", prev_button)
                 time.sleep(1)
                 
-                # 버튼 클릭 - JavaScript 사용
-                driver.execute_script("arguments[0].click();", prev_button)
+                # JavaScript로 클릭 이벤트 실행
+                driver.execute_script("""
+                    // 네이버 댓글 페이지네이션 처리를 위한 특수 처리
+                    var element = arguments[0];
+                    
+                    // _returnFalse 클래스가 있는 경우 별도 처리
+                    if (element.classList.contains('_returnFalse')) {
+                        // 클래스 속성에서 *param(...) 파라미터 추출
+                        var classAttr = element.getAttribute('class');
+                        var paramMatch = classAttr.match(/\\*param\\(([^)]+)\\)/);
+                        
+                        if (paramMatch && paramMatch[1]) {
+                            // 네이버 댓글 페이지네이션 함수 직접 호출 시도
+                            try {
+                                var paramValue = paramMatch[1];
+                                if (window[paramValue]) {
+                                    window[paramValue]();
+                                    return;
+                                }
+                            } catch (e) {
+                                console.error('네이버 댓글 함수 호출 실패:', e);
+                            }
+                        }
+                    }
+                    
+                    // 기본 클릭
+                    element.click();
+                """, prev_button)
                 
                 time.sleep(2)  # 페이지 로딩 대기
                 return navigate_to_page(driver, find_pagination_element(driver), page_num)
             else:
                 print("이전 버튼이 비활성화 되어 있습니다.")
                 return False
+        
     except Exception as e:
         print(f"페이지 {page_num}로 이동 실패: {e}")
-        
-        # JavaScript로 시도
-        try:
-            moved = driver.execute_script("""
-                var pagination = arguments[0];
-                var targetPage = arguments[1];
-                
-                // 현재 페이지 확인
-                var currentPageEl = pagination.querySelector('._currentPageNo, .current, .on');
-                if (!currentPageEl) return false;
-                
-                var currentPage = parseInt(currentPageEl.textContent.trim());
-                if (currentPage === targetPage) return true;
-                
-                // 이동 방향 결정
-                if (currentPage < targetPage) {
-                    // 다음 버튼 클릭
-                    var nextBtn = pagination.querySelector('.next:not(.dimmed)');
-                    if (nextBtn) {
-                        nextBtn.click();
-                        return true;
-                    }
-                } else {
-                    // 이전 버튼 클릭
-                    var prevBtn = pagination.querySelector('.prev:not(.dimmed)');
-                    if (prevBtn) {
-                        prevBtn.click();
-                        return true;
-                    }
-                }
-                
-                return false;
-            """, pagination, page_num)
-            
-            if moved:
-                print(f"JavaScript로 페이지 이동 시도 성공")
-                time.sleep(2)  # 페이지 로딩 대기
-                return navigate_to_page(driver, find_pagination_element(driver), page_num)
-        except Exception as e:
-            print(f"JavaScript 페이지 이동 실패: {e}")
-        
         return False
 
 def extract_email(text):
