@@ -19,7 +19,7 @@ echo 필요한 패키지를 설치합니다...
 pip install selenium webdriver-manager
 
 REM 테스트 스크립트 실행
-echo.
+echo.                                     
 echo 테스트 스크립트를 실행합니다...
 echo.
 python naver_comment_test.py

@@ -271,45 +271,30 @@ def get_total_pages(driver, pagination):
         return 1
     
     try:
-        # 페이지 번호 정보 찾기
-        last_page_element = pagination.find_element(By.CSS_SELECTOR, "._lastPageNo")
-        total_pages = int(last_page_element.text.strip())
-        print(f"총 페이지 수: {total_pages}")
-        return total_pages
+        # JavaScript로 페이지 정보 확인 (네이버 댓글 구조에 맞게 수정)
+        total_pages = driver.execute_script("""
+            var pagination = arguments[0];
+            
+            // 페이지 번호가 있는 링크 확인
+            var pageLinks = pagination.querySelectorAll('a');
+            var maxPage = 1;
+            
+            for (var i = 0; i < pageLinks.length; i++) {
+                var pageText = pageLinks[i].textContent.trim();
+                var pageNum = parseInt(pageText);
+                if (!isNaN(pageNum) && pageNum > maxPage) {
+                    maxPage = pageNum;
+                }
+            }
+            
+            return maxPage || 1;
+        """, pagination)
+        
+        print(f"JavaScript로 확인한 총 페이지 수: {total_pages}")
+        return total_pages or 1
     except Exception as e:
         print(f"총 페이지 수 확인 실패: {e}")
-        
-        # 다른 방법으로 시도
-        try:
-            # JavaScript로 페이지 정보 확인
-            total_pages = driver.execute_script("""
-                var pagination = arguments[0];
-                
-                // lastPageNo 클래스 확인
-                var lastPageEl = pagination.querySelector('._lastPageNo, .last_page, .total_page');
-                if (lastPageEl) {
-                    return parseInt(lastPageEl.textContent.trim());
-                }
-                
-                // 페이지 번호가 있는 링크 확인
-                var pageLinks = pagination.querySelectorAll('a');
-                var maxPage = 1;
-                
-                for (var i = 0; i < pageLinks.length; i++) {
-                    var pageNum = parseInt(pageLinks[i].textContent.trim());
-                    if (!isNaN(pageNum) && pageNum > maxPage) {
-                        maxPage = pageNum;
-                    }
-                }
-                
-                return maxPage || 1;
-            """, pagination)
-            
-            print(f"JavaScript로 확인한 총 페이지 수: {total_pages}")
-            return total_pages or 1
-        except Exception as e:
-            print(f"총 페이지 수 확인 실패 (JavaScript): {e}")
-            return 1
+        return 1
 
 def navigate_to_page(driver, pagination, page_num):
     """특정 페이지로 이동"""
@@ -319,17 +304,25 @@ def navigate_to_page(driver, pagination, page_num):
     print(f"페이지 {page_num}로 이동 시도...")
     
     try:
-        # 페이지 이동 전에 현재 페이지 확인
-        current_page_element = pagination.find_element(By.CSS_SELECTOR, "._currentPageNo")
-        current_page = int(current_page_element.text.strip())
+        # 네이버 댓글 페이지네이션 특성에 맞게 수정
+        # 현재 페이지는 보통 "on" 클래스를 가지고 있음
+        current_page_elements = pagination.find_elements(By.CSS_SELECTOR, "a.on, a.current, ._currentPageNo")
+        current_page = 1  # 기본값 설정
+        
+        if current_page_elements:
+            current_page_text = current_page_elements[0].text.strip()
+            if current_page_text:
+                current_page = int(current_page_text)
+        
+        print(f"현재 페이지: {current_page}, 목표 페이지: {page_num}")
         
         if current_page == page_num:
             print(f"이미 페이지 {page_num}에 있습니다.")
             return True
         
-        # 이전/다음 버튼으로 이동
-        prev_button = pagination.find_element(By.CSS_SELECTOR, ".prev")
-        next_button = pagination.find_element(By.CSS_SELECTOR, ".next:not(.dimmed)")
+        # 네이버 댓글 페이지네이션에 맞게 이전/다음 버튼 찾기
+        prev_button = pagination.find_element(By.CSS_SELECTOR, "a.prev, a[class*='Prev']")
+        next_button = pagination.find_element(By.CSS_SELECTOR, "a.next, a[class*='Next']")
         
         if current_page < page_num:
             # 다음 페이지로 이동
@@ -340,11 +333,8 @@ def navigate_to_page(driver, pagination, page_num):
                 driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", next_button)
                 time.sleep(1)
                 
-                # 버튼 클릭
-                try:
-                    next_button.click()
-                except:
-                    driver.execute_script("arguments[0].click();", next_button)
+                # 버튼 클릭 - JavaScript 사용
+                driver.execute_script("arguments[0].click();", next_button)
                 
                 time.sleep(2)  # 페이지 로딩 대기
                 return navigate_to_page(driver, find_pagination_element(driver), page_num)
@@ -360,11 +350,8 @@ def navigate_to_page(driver, pagination, page_num):
                 driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", prev_button)
                 time.sleep(1)
                 
-                # 버튼 클릭
-                try:
-                    prev_button.click()
-                except:
-                    driver.execute_script("arguments[0].click();", prev_button)
+                # 버튼 클릭 - JavaScript 사용
+                driver.execute_script("arguments[0].click();", prev_button)
                 
                 time.sleep(2)  # 페이지 로딩 대기
                 return navigate_to_page(driver, find_pagination_element(driver), page_num)
