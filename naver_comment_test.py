@@ -296,7 +296,7 @@ def navigate_to_page(driver, pagination, page_num):
         last_page_element = pagination.find_element(By.CSS_SELECTOR, "._lastPageNo")
         last_page = int(last_page_element.text.strip())
         
-        print(f"현재 페이지: {current_page}, 목표 페이지: {page_num},, 총 페이지: {last_page}")
+        print(f"현재 페이지: {current_page}, 목표 페이지: {page_num}, 총 페이지: {last_page}")
         
         if current_page == page_num:
             print(f"이미 페이지 {page_num}에 있습니다.")
@@ -306,9 +306,9 @@ def navigate_to_page(driver, pagination, page_num):
             print(f"목표 페이지({page_num})가 총 페이지({last_page})보다 큽니다.")
             return False
         
-        # 이전/다음 버튼 찾기 (네이버 댓글 구조에 맞게)
-        prev_button = pagination.find_element(By.CSS_SELECTOR, "a.prev, a[class*='Prev']")
-        next_button = pagination.find_element(By.CSS_SELECTOR, "a.next, a[class*='Next']")
+        # 이전/다음 버튼 찾기
+        prev_button = pagination.find_element(By.CSS_SELECTOR, "a.prev")
+        next_button = pagination.find_element(By.CSS_SELECTOR, "a.next") 
         
         if current_page < page_num:
             # 다음 페이지로 이동
@@ -317,39 +317,32 @@ def navigate_to_page(driver, pagination, page_num):
                 
                 # 버튼이 보이게 스크롤
                 driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", next_button)
-                time.sleep(1)
+                time.sleep(1.5)  # 스크롤 후 대기 시간 증가
                 
-                # JavaScript로 클릭 이벤트 실행
-                driver.execute_script("""
-                    // 네이버 댓글 페이지네이션 처리를 위한 특수 처리
-                    var element = arguments[0];
-                    
-                    // _returnFalse 클래스가 있는 경우 별도 처리
-                    if (element.classList.contains('_returnFalse')) {
-                        // 클래스 속성에서 *param(...) 파라미터 추출
-                        var classAttr = element.getAttribute('class');
-                        var paramMatch = classAttr.match(/\\*param\\(([^)]+)\\)/);
-                        
-                        if (paramMatch && paramMatch[1]) {
-                            // 네이버 댓글 페이지네이션 함수 직접 호출 시도
-                            try {
-                                var paramValue = paramMatch[1];
-                                if (window[paramValue]) {
-                                    window[paramValue]();
-                                    return;
-                                }
-                            } catch (e) {
-                                console.error('네이버 댓글 함수 호출 실패:', e);
-                            }
-                        }
-                    }
-                    
-                    // 기본 클릭
-                    element.click();
-                """, next_button)
+                # 직접 클릭 시도
+                try:
+                    next_button.click()
+                    print("클릭 성공!")
+                except Exception as click_error:
+                    print(f"직접 클릭 실패: {click_error}")
+                    # JavaScript로 클릭 시도
+                    try:
+                        driver.execute_script("arguments[0].click();", next_button)
+                        print("JavaScript 클릭 성공!")
+                    except Exception as js_error:
+                        print(f"JavaScript 클릭 실패: {js_error}")
+                        return False
                 
-                time.sleep(2)  # 페이지 로딩 대기
-                return navigate_to_page(driver, find_pagination_element(driver), page_num)
+                # 페이지 전환 대기 (충분한 시간)
+                time.sleep(3)  # 페이지 로딩을 위한 대기 시간 증가
+                
+                # 페이지네이션 요소 다시 찾기
+                updated_pagination = find_pagination_element(driver)
+                if not updated_pagination:
+                    print("페이지네이션 요소를 다시 찾을 수 없습니다.")
+                    return False
+                
+                return navigate_to_page(driver, updated_pagination, page_num)
             else:
                 print("다음 버튼이 비활성화 되어 있습니다.")
                 return False
@@ -360,39 +353,32 @@ def navigate_to_page(driver, pagination, page_num):
                 
                 # 버튼이 보이게 스크롤
                 driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", prev_button)
-                time.sleep(1)
+                time.sleep(1.5)  # 스크롤 후 대기 시간 증가
                 
-                # JavaScript로 클릭 이벤트 실행
-                driver.execute_script("""
-                    // 네이버 댓글 페이지네이션 처리를 위한 특수 처리
-                    var element = arguments[0];
-                    
-                    // _returnFalse 클래스가 있는 경우 별도 처리
-                    if (element.classList.contains('_returnFalse')) {
-                        // 클래스 속성에서 *param(...) 파라미터 추출
-                        var classAttr = element.getAttribute('class');
-                        var paramMatch = classAttr.match(/\\*param\\(([^)]+)\\)/);
-                        
-                        if (paramMatch && paramMatch[1]) {
-                            // 네이버 댓글 페이지네이션 함수 직접 호출 시도
-                            try {
-                                var paramValue = paramMatch[1];
-                                if (window[paramValue]) {
-                                    window[paramValue]();
-                                    return;
-                                }
-                            } catch (e) {
-                                console.error('네이버 댓글 함수 호출 실패:', e);
-                            }
-                        }
-                    }
-                    
-                    // 기본 클릭
-                    element.click();
-                """, prev_button)
+                # 직접 클릭 시도
+                try:
+                    prev_button.click()
+                    print("클릭 성공!")
+                except Exception as click_error:
+                    print(f"직접 클릭 실패: {click_error}")
+                    # JavaScript로 클릭 시도
+                    try:
+                        driver.execute_script("arguments[0].click();", prev_button)
+                        print("JavaScript 클릭 성공!")
+                    except Exception as js_error:
+                        print(f"JavaScript 클릭 실패: {js_error}")
+                        return False
                 
-                time.sleep(2)  # 페이지 로딩 대기
-                return navigate_to_page(driver, find_pagination_element(driver), page_num)
+                # 페이지 전환 대기 (충분한 시간)
+                time.sleep(3)  # 페이지 로딩을 위한 대기 시간 증가
+                
+                # 페이지네이션 요소 다시 찾기
+                updated_pagination = find_pagination_element(driver)
+                if not updated_pagination:
+                    print("페이지네이션 요소를 다시 찾을 수 없습니다.")
+                    return False
+                
+                return navigate_to_page(driver, updated_pagination, page_num)
             else:
                 print("이전 버튼이 비활성화 되어 있습니다.")
                 return False
